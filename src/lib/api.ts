@@ -89,6 +89,38 @@ export interface CommissionRate {
   effective_from: string
   effective_to: string | null
   set_by: string
+  // Empty = a plain single rate; otherwise the bands decide and the three
+  // fields above are ignored.
+  tiers: CommissionTier[]
+}
+
+// One amount band: for amounts from min_amount through max_amount (both
+// inclusive; max null = no upper limit) the provider charges provider_fee and
+// PayPulse earns provider_fee * percentage + flat_fee. percentage is a
+// fraction of the provider's fee (0.20 = 20%).
+export interface CommissionTier {
+  id: string
+  min_amount: string
+  max_amount: string | null
+  provider_fee: string
+  percentage: string
+  flat_fee: string
+}
+
+export interface CommissionTierInput {
+  min_amount: string
+  max_amount: string | null
+  provider_fee: string
+  percentage: string
+  flat_fee: string
+}
+
+export interface CommissionPreview {
+  provider_id: string
+  amount: string
+  commission: string | null
+  provider_fee: string | null
+  rate_id: string | null
 }
 
 export interface CommissionSummary {
@@ -211,6 +243,13 @@ export const setCommissionRate = (
     method: 'PUT',
     body: JSON.stringify({ commission_type, percentage, flat_fee }),
   })
+export const setCommissionTiers = (providerId: string, tiers: CommissionTierInput[]) =>
+  request<CommissionRate>(`/providers/${providerId}/commission-tiers`, {
+    method: 'PUT',
+    body: JSON.stringify({ tiers }),
+  })
+export const previewCommission = (providerId: string, amount: string) =>
+  request<CommissionPreview>(`/providers/${providerId}/commission-preview?amount=${encodeURIComponent(amount)}`)
 export const getCommissionSummary = (providerId: string) =>
   request<CommissionSummary>(`/providers/${providerId}/commissions/summary`)
 export const listCommissionEntries = (providerId: string) =>
