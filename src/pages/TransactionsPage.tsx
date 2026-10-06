@@ -101,6 +101,7 @@ export function TransactionsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
+              <Th>Shop</Th>
               <Th>Provider</Th>
               <Th>Type</Th>
               <Th>Amount</Th>
@@ -112,6 +113,7 @@ export function TransactionsPage() {
           <tbody>
             {transactions.map((t) => (
               <tr key={t.id} style={{ borderBottom: '1px solid var(--hairline)' }}>
+                <Td>{t.shop_name ?? '—'}</Td>
                 <Td>{providerName(t.provider_id)}</Td>
                 <Td>{t.type}</Td>
                 <Td className="num">LSL {t.amount}</Td>

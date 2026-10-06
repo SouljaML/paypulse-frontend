@@ -376,6 +376,7 @@ export interface Transaction {
   id: string
   merchant_id: string
   shop_id: string | null
+  shop_name: string | null
   provider_id: string
   type: 'collection' | 'withdrawal'
   status: TransactionStatus
