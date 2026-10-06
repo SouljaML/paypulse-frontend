@@ -50,7 +50,7 @@ function RequireRole({ roles, children }: { roles: string[]; children: React.Rea
 function HomeRedirect() {
   const { decoded } = useAuth()
   if (decoded && ADMIN_ROLES.includes(decoded.role)) return <Navigate to="/merchants" replace />
-  if (decoded && OWNER_ROLES.includes(decoded.role)) return <Navigate to="/shops" replace />
+  if (decoded && OWNER_ROLES.includes(decoded.role)) return <Navigate to="/balances" replace />
   return <Navigate to="/transactions" replace />
 }
 

@@ -23,11 +23,11 @@ const ADMIN_NAV: NavItem[] = [
 ]
 
 const OWNER_NAV: NavItem[] = [
+  { to: '/balances', label: 'Balances' },
   { to: '/shops', label: 'Shops' },
   { to: '/tellers', label: 'Tellers' },
   { to: '/tills', label: 'Tills' },
   { to: '/transactions', label: 'Transactions' },
-  { to: '/balances', label: 'Balances' },
   { to: '/settings', label: 'Settings' },
 ]
 
