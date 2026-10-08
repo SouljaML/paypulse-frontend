@@ -11,6 +11,8 @@ const STATUS_TONE: Record<string, Tone> = {
   suspended: 'bad',
   rejected: 'bad',
   disabled: 'bad',
+  revoked: 'bad',
+  blocked: 'bad',
   declined: 'bad',
 }
 

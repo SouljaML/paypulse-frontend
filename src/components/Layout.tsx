@@ -27,6 +27,7 @@ const OWNER_NAV: NavItem[] = [
   { to: '/shops', label: 'Shops' },
   { to: '/tellers', label: 'Tellers' },
   { to: '/tills', label: 'Tills' },
+  { to: '/devices', label: 'Devices' },
   { to: '/transactions', label: 'Transactions' },
   { to: '/settings', label: 'Settings' },
 ]

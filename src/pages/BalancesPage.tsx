@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
-import { getBalances, listProviderAccounts, listShopProviderAccounts, type ProviderAccount } from '../lib/api'
+import { getBalances, listProviderAccounts, type ProviderAccount } from '../lib/api'
 
 export function BalancesPage() {
   const { decoded } = useAuth()
@@ -9,16 +9,13 @@ export function BalancesPage() {
   const [refreshing, setRefreshing] = useState(false)
 
   const merchantId = decoded?.merchant_id ?? null
-  // A teller only ever sees their own shop's accounts — the merchant-wide
-  // endpoint would otherwise leak every other shop's balances to them.
-  const scopedToShop = decoded?.role === 'teller' && decoded.shop_id
+  const isTeller = decoded?.role === 'teller'
 
   async function load() {
     if (!merchantId) return
-    const accs = scopedToShop
-      ? await listShopProviderAccounts(merchantId, decoded!.shop_id!)
-      : await listProviderAccounts(merchantId)
-    setAccounts(accs)
+    // The server decides what each role may see; providers are set up once
+    // for the whole merchant.
+    setAccounts(await listProviderAccounts(merchantId))
   }
 
   useEffect(() => {
@@ -57,7 +54,7 @@ export function BalancesPage() {
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 4px' }}>Balances</h1>
           <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: 0 }}>
-            {scopedToShop ? 'Your shop\u2019s provider accounts.' : 'Across every shop and linked provider account.'}
+            {isTeller ? 'Provider accounts available at your shop.' : 'Provider accounts set up for your business, usable in every shop.'}
           </p>
         </div>
         <button onClick={handleRefresh} disabled={refreshing} style={secondaryButtonStyle}>
@@ -66,7 +63,7 @@ export function BalancesPage() {
       </div>
 
       {accounts.length === 0 ? (
-        <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>No provider accounts linked yet.</p>
+        <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>No providers have been set up for your business yet. Contact PayPulse.</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -82,7 +79,7 @@ export function BalancesPage() {
               <tr key={a.id} style={{ borderBottom: '1px solid var(--hairline)' }}>
                 <Td style={{ fontWeight: 500 }}>{a.provider_name}</Td>
                 <Td className="num">{a.account_identifier}</Td>
-                <Td className="num">{a.cached_balance !== null ? `LSL ${a.cached_balance}` : '—'}</Td>
+                <Td className="num">{a.is_active ? (a.cached_balance !== null ? `LSL ${a.cached_balance}` : 'Not available') : 'Switched off'}</Td>
                 <Td className="num">
                   {a.balance_updated_at ? new Date(a.balance_updated_at).toLocaleString() : '—'}
                 </Td>

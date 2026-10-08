@@ -144,6 +144,8 @@ export interface CommissionEntry {
 
 export interface ProviderAccount {
   id: string
+  // null = available to every shop of the merchant (the normal case)
+  shop_id: string | null
   provider_adapter_key: string
   provider_name: string
   account_identifier: string
@@ -155,8 +157,9 @@ export interface ProviderAccount {
 export interface Balance {
   provider_adapter_key: string
   account_identifier: string
-  balance: string
-  as_of: string
+  // null when the provider can't report a balance (e.g. C-Pay)
+  balance: string | null
+  as_of: string | null
 }
 
 // ---- Auth ----
@@ -465,15 +468,17 @@ export const setShopStatus = (merchantId: string, shopId: string, status: 'activ
   })
 export const listShopProviderAccounts = (merchantId: string, shopId: string) =>
   request<ProviderAccount[]>(`/merchants/${merchantId}/shops/${shopId}/provider-accounts`)
-export const createShopProviderAccount = (
-  merchantId: string,
-  shopId: string,
-  providerAdapterKey: string,
-  accountIdentifier: string,
-) =>
-  request<ProviderAccount>(`/merchants/${merchantId}/shops/${shopId}/provider-accounts`, {
+// Provider accounts are set up once per merchant by PayPulse (platform admin);
+// they then work in every shop and on every registered device.
+export const createMerchantProviderAccount = (merchantId: string, providerAdapterKey: string, accountIdentifier: string) =>
+  request<ProviderAccount>(`/merchants/${merchantId}/provider-accounts`, {
     method: 'POST',
     body: JSON.stringify({ provider_adapter_key: providerAdapterKey, account_identifier: accountIdentifier }),
+  })
+export const setProviderAccountActive = (merchantId: string, accountId: string, isActive: boolean) =>
+  request<ProviderAccount>(`/merchants/${merchantId}/provider-accounts/${accountId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_active: isActive }),
   })
 
 // ---- Tills ----
@@ -499,6 +504,45 @@ export const setTillStatus = (merchantId: string, tillId: string, status: 'activ
   request<TillRecord>(`/merchants/${merchantId}/tills/${tillId}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status, reason: reason ?? null }),
+  })
+
+// ---- Devices (registered phones / POS terminals) ----
+
+export interface DeviceRecord {
+  id: string
+  merchant_id: string
+  shop_id: string
+  shop_name: string | null
+  till_id: string | null
+  till_label: string | null
+  label: string
+  status: 'pending' | 'active' | 'revoked'
+  platform: string | null
+  model: string | null
+  os_version: string | null
+  app_version: string | null
+  created_at: string
+  enrolled_at: string | null
+  last_seen_at: string | null
+  revoked_at: string | null
+  revoked_reason: string | null
+  enrollment_expires_at: string | null
+}
+
+// Returned once, when a device is registered or its code is reissued.
+export interface DeviceWithCode extends DeviceRecord {
+  enrollment_code: string
+}
+
+export const listDevices = (merchantId: string) => request<DeviceRecord[]>(`/merchants/${merchantId}/devices`)
+export const registerDevice = (merchantId: string, input: { shop_id: string; till_id: string | null; label: string }) =>
+  request<DeviceWithCode>(`/merchants/${merchantId}/devices`, { method: 'POST', body: JSON.stringify(input) })
+export const reissueDeviceCode = (merchantId: string, deviceId: string) =>
+  request<DeviceWithCode>(`/merchants/${merchantId}/devices/${deviceId}/reissue-code`, { method: 'POST' })
+export const revokeDevice = (merchantId: string, deviceId: string, reason: string) =>
+  request<DeviceRecord>(`/merchants/${merchantId}/devices/${deviceId}/revoke`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   })
 
 // ---- Tellers ----

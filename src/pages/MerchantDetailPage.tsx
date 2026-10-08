@@ -16,6 +16,7 @@ import {
 } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 import { MerchantLogins } from '../components/MerchantLogins'
+import { MerchantProviderAccounts } from '../components/MerchantProviderAccounts'
 
 export function MerchantDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -214,6 +215,8 @@ export function MerchantDetailPage() {
       )}
 
       <div style={{ marginTop: 36 }}>{id && <MerchantLogins merchantId={id} />}</div>
+
+      <div style={{ marginTop: 36 }}>{id && <MerchantProviderAccounts merchantId={id} />}</div>
 
       <h2 style={{ fontSize: 14, fontWeight: 600, margin: '36px 0 12px' }}>Settlements</h2>
       {settlements.length === 0 ? (

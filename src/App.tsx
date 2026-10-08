@@ -14,6 +14,7 @@ import { AuditLogPage } from './pages/AuditLogPage'
 import { ShopsPage } from './pages/ShopsPage'
 import { ShopDetailPage } from './pages/ShopDetailPage'
 import { TillsPage } from './pages/TillsPage'
+import { DevicesPage } from './pages/DevicesPage'
 import { TellersPage } from './pages/TellersPage'
 import { ForcedPasswordChangePage } from './pages/ForcedPasswordChangePage'
 import { ReportsPage } from './pages/ReportsPage'
@@ -149,6 +150,14 @@ export default function App() {
           element={
             <RequireRole roles={OWNER_ROLES}>
               <TillsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/devices"
+          element={
+            <RequireRole roles={OWNER_ROLES}>
+              <DevicesPage />
             </RequireRole>
           }
         />
