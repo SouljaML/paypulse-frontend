@@ -492,13 +492,22 @@ export interface TillRecord {
   status: 'active' | 'blocked'
   blocked_reason: string | null
   created_at: string
+  device_id: string | null
+  device_reference: string | null
+  device_label: string | null
+  device_status: DeviceStatus | null
 }
 
 export const listTills = (merchantId: string) => request<TillRecord[]>(`/merchants/${merchantId}/tills`)
-export const createTill = (merchantId: string, shopId: string, tillIdentifier: string, label: string) =>
+export const createTill = (merchantId: string, shopId: string, deviceId: string, label: string) =>
   request<TillRecord>(`/merchants/${merchantId}/tills`, {
     method: 'POST',
-    body: JSON.stringify({ shop_id: shopId, till_identifier: tillIdentifier, label }),
+    body: JSON.stringify({ shop_id: shopId, device_id: deviceId, label }),
+  })
+export const setTillDevice = (merchantId: string, tillId: string, deviceId: string) =>
+  request<TillRecord>(`/merchants/${merchantId}/tills/${tillId}/device`, {
+    method: 'PUT',
+    body: JSON.stringify({ device_id: deviceId }),
   })
 export const setTillStatus = (merchantId: string, tillId: string, status: 'active' | 'blocked', reason?: string) =>
   request<TillRecord>(`/merchants/${merchantId}/tills/${tillId}/status`, {
@@ -506,44 +515,60 @@ export const setTillStatus = (merchantId: string, tillId: string, status: 'activ
     body: JSON.stringify({ status, reason: reason ?? null }),
   })
 
-// ---- Devices (registered phones / POS terminals) ----
+// ---- Devices (owned by PayPulse; managed by platform admin) ----
+
+export type DeviceStatus = 'pending' | 'active' | 'suspended' | 'revoked'
 
 export interface DeviceRecord {
   id: string
-  merchant_id: string
-  shop_id: string
+  reference: string
+  serial_number: string | null
+  label: string
+  status: DeviceStatus
+  merchant_id: string | null
+  merchant_name: string | null
+  shop_id: string | null
   shop_name: string | null
   till_id: string | null
   till_label: string | null
-  label: string
-  status: 'pending' | 'active' | 'revoked'
   platform: string | null
   model: string | null
   os_version: string | null
   app_version: string | null
   created_at: string
   enrolled_at: string | null
+  assigned_at: string | null
   last_seen_at: string | null
+  suspended_at: string | null
+  suspended_reason: string | null
   revoked_at: string | null
   revoked_reason: string | null
   enrollment_expires_at: string | null
 }
 
-// Returned once, when a device is registered or its code is reissued.
+// Returned once, when a device is added or its code is reissued.
 export interface DeviceWithCode extends DeviceRecord {
   enrollment_code: string
 }
 
-export const listDevices = (merchantId: string) => request<DeviceRecord[]>(`/merchants/${merchantId}/devices`)
-export const registerDevice = (merchantId: string, input: { shop_id: string; till_id: string | null; label: string }) =>
-  request<DeviceWithCode>(`/merchants/${merchantId}/devices`, { method: 'POST', body: JSON.stringify(input) })
-export const reissueDeviceCode = (merchantId: string, deviceId: string) =>
-  request<DeviceWithCode>(`/merchants/${merchantId}/devices/${deviceId}/reissue-code`, { method: 'POST' })
-export const revokeDevice = (merchantId: string, deviceId: string, reason: string) =>
-  request<DeviceRecord>(`/merchants/${merchantId}/devices/${deviceId}/revoke`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  })
+const adminDevice = (id: string, action: string) => `/admin/devices/${id}/${action}`
+const post = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
+
+export const adminListDevices = () => request<DeviceRecord[]>('/admin/devices')
+export const adminAddDevice = (input: { label: string; serial_number?: string | null }) =>
+  post<DeviceWithCode>('/admin/devices', input)
+export const adminAssignDevice = (id: string, merchantId: string) =>
+  post<DeviceRecord>(adminDevice(id, 'assign'), { merchant_id: merchantId })
+export const adminUnassignDevice = (id: string) => post<DeviceRecord>(adminDevice(id, 'unassign'))
+export const adminSuspendDevice = (id: string, reason: string) => post<DeviceRecord>(adminDevice(id, 'suspend'), { reason })
+export const adminReinstateDevice = (id: string) => post<DeviceRecord>(adminDevice(id, 'reinstate'))
+export const adminRevokeDevice = (id: string, reason: string) => post<DeviceRecord>(adminDevice(id, 'revoke'), { reason })
+export const adminReissueDeviceCode = (id: string) => post<DeviceWithCode>(adminDevice(id, 'reissue-code'))
+
+// Devices PayPulse has assigned to this merchant that aren't linked to a till yet.
+export const listAvailableDevices = (merchantId: string) =>
+  request<DeviceRecord[]>(`/merchants/${merchantId}/devices?available=true`)
 
 // ---- Tellers ----
 

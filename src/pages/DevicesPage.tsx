@@ -1,81 +1,99 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { useAuth } from '../lib/auth'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  listDevices,
-  listShops,
-  listTills,
-  registerDevice,
-  reissueDeviceCode,
-  revokeDevice,
+  adminAddDevice,
+  adminAssignDevice,
+  adminListDevices,
+  adminReinstateDevice,
+  adminReissueDeviceCode,
+  adminRevokeDevice,
+  adminSuspendDevice,
+  adminUnassignDevice,
+  listMerchants,
   type DeviceRecord,
   type DeviceWithCode,
-  type Shop,
-  type TillRecord,
+  type Merchant,
 } from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 
+type Filter = 'all' | 'unassigned' | 'active' | 'suspended' | 'revoked'
+
 export function DevicesPage() {
-  const { decoded } = useAuth()
-  const merchantId = decoded?.merchant_id ?? null
   const [devices, setDevices] = useState<DeviceRecord[] | null>(null)
-  const [shops, setShops] = useState<Shop[]>([])
-  const [tills, setTills] = useState<TillRecord[]>([])
+  const [merchants, setMerchants] = useState<Merchant[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
-  // The enrolment code is only ever returned once, so it is held here for the
-  // owner to read out / copy, and gone as soon as they dismiss it.
+  const [filter, setFilter] = useState<Filter>('all')
+  // The enrolment code is only returned once; held here until dismissed.
   const [issued, setIssued] = useState<DeviceWithCode | null>(null)
 
   async function reload() {
-    if (!merchantId) return
-    const [d, s, t] = await Promise.all([listDevices(merchantId), listShops(merchantId), listTills(merchantId)])
+    const [d, m] = await Promise.all([adminListDevices(), listMerchants()])
     setDevices(d)
-    setShops(s)
-    setTills(t)
+    setMerchants(m)
   }
 
   useEffect(() => {
     reload().catch((err) => setError(err.message))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [merchantId])
+  }, [])
 
-  async function handleReissue(d: DeviceRecord) {
-    if (!merchantId) return
-    const warning =
-      d.status === 'active'
-        ? `Issue a new code for "${d.label}"? The phone currently registered will stop working immediately.`
-        : `Issue a new code for "${d.label}"?`
-    if (!window.confirm(warning)) return
+  async function run(d: DeviceRecord, fn: () => Promise<unknown>, fallback: string) {
     setBusyId(d.id)
     setError(null)
     try {
-      setIssued(await reissueDeviceCode(merchantId, d.id))
+      await fn()
       await reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not issue a new code')
+      setError(err instanceof Error ? err.message : fallback)
     } finally {
       setBusyId(null)
     }
   }
 
-  async function handleRevoke(d: DeviceRecord) {
-    if (!merchantId) return
-    const reason = window.prompt(`Reason for revoking "${d.label}":`)
-    if (!reason || !reason.trim()) return
-    setBusyId(d.id)
-    setError(null)
-    try {
-      await revokeDevice(merchantId, d.id, reason.trim())
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not revoke device')
-    } finally {
-      setBusyId(null)
-    }
+  function askReason(question: string): string | null {
+    const reason = window.prompt(question)
+    return reason && reason.trim() ? reason.trim() : null
   }
 
-  if (!merchantId) return <p style={{ color: 'var(--status-bad)', fontSize: 13 }}>Not linked to a merchant.</p>
+  const handleAssign = (d: DeviceRecord, merchantId: string) =>
+    merchantId && run(d, () => adminAssignDevice(d.id, merchantId), 'Could not assign device')
+  const handleUnassign = (d: DeviceRecord) => {
+    if (!window.confirm(`Take "${d.label}" back from ${d.merchant_name}? It will be unlinked from its till.`)) return
+    run(d, () => adminUnassignDevice(d.id), 'Could not unassign device')
+  }
+  const handleSuspend = (d: DeviceRecord) => {
+    const reason = askReason(`Reason for suspending "${d.label}" (e.g. lease unpaid):`)
+    if (reason) run(d, () => adminSuspendDevice(d.id, reason), 'Could not suspend device')
+  }
+  const handleReinstate = (d: DeviceRecord) => run(d, () => adminReinstateDevice(d.id), 'Could not reinstate device')
+  const handleRevoke = (d: DeviceRecord) => {
+    const reason = askReason(`Reason for REVOKING "${d.label}" (permanent — the handset must be re-enrolled):`)
+    if (reason) run(d, () => adminRevokeDevice(d.id, reason), 'Could not revoke device')
+  }
+  const handleReissue = (d: DeviceRecord) => {
+    if (d.status === 'revoked') {
+      if (!window.confirm(`Return "${d.label}" to inventory with a new code? You can then assign it to any merchant.`)) return
+      run(d, async () => setIssued(await adminReissueDeviceCode(d.id)), 'Could not return device to inventory')
+      return
+    }
+    if (!window.confirm(`Issue a new code for "${d.label}"? The handset currently enrolled will stop working.`)) return
+    run(d, async () => setIssued(await adminReissueDeviceCode(d.id)), 'Could not issue a new code')
+  }
+
+  const shown = useMemo(() => {
+    if (!devices) return []
+    switch (filter) {
+      case 'unassigned':
+        return devices.filter((d) => !d.merchant_id && d.status !== 'revoked')
+      case 'all':
+        return devices
+      default:
+        return devices.filter((d) => d.status === filter)
+    }
+  }, [devices, filter])
+
+  const activeMerchants = merchants.filter((m) => m.status === 'active')
+
   if (error && !devices) return <div style={{ color: 'var(--status-bad)' }}>{error}</div>
   if (!devices) return <div style={{ color: 'var(--text-dim)' }}>Loading…</div>
 
@@ -84,23 +102,33 @@ export function DevicesPage() {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
         <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Devices</h1>
         <button onClick={() => setShowForm((s) => !s)} style={secondaryButtonStyle}>
-          {showForm ? 'Cancel' : 'Register device'}
+          {showForm ? 'Cancel' : 'Add device'}
         </button>
       </div>
-      <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: '0 0 20px' }}>
-        Only registered devices can sign tellers in or take payments. Revoking a device cuts it off on its very next
-        request.
+      <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: '0 0 16px' }}>
+        PayPulse owns every device. Add it, enrol the handset with the code, then assign it to a merchant — the merchant
+        links it to a till. <strong>Suspend</strong> is reversible (e.g. unpaid lease); <strong>Revoke</strong> is
+        permanent.
       </p>
+
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        {(['all', 'unassigned', 'active', 'suspended', 'revoked'] as Filter[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            style={{ ...linkButtonStyle, fontWeight: filter === f ? 700 : 400, textDecoration: filter === f ? 'underline' : 'none' }}
+          >
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
 
       {error && <div style={{ color: 'var(--status-bad)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
       {issued && <CodeCard issued={issued} onDismiss={() => setIssued(null)} />}
 
       {showForm && (
-        <RegisterForm
-          merchantId={merchantId}
-          shops={shops}
-          tills={tills}
+        <AddDeviceForm
           onCreated={(d) => {
             setShowForm(false)
             setIssued(d)
@@ -109,27 +137,56 @@ export function DevicesPage() {
         />
       )}
 
-      {devices.length === 0 ? (
-        <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>No devices registered yet.</p>
+      {shown.length === 0 ? (
+        <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>No devices here.</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
               <Th>Device</Th>
+              <Th>Merchant</Th>
               <Th>Shop / till</Th>
               <Th>Status</Th>
-              <Th>Handset</Th>
               <Th>Last seen</Th>
               <Th />
             </tr>
           </thead>
           <tbody>
-            {devices.map((d) => (
+            {shown.map((d) => (
               <tr key={d.id} style={{ borderBottom: '1px solid var(--hairline)' }}>
-                <Td style={{ fontWeight: 500 }}>{d.label}</Td>
+                <Td>
+                  <div style={{ fontWeight: 500 }}>{d.label}</div>
+                  <div className="num" style={{ color: 'var(--text-dim)', fontSize: 12 }}>
+                    {d.reference}
+                    {d.model ? ` · ${d.model}` : ''}
+                  </div>
+                </Td>
+                <Td>
+                  {d.merchant_name ??
+                    (d.status === 'revoked' ? (
+                      '—'
+                    ) : (
+                      <select
+                        value=""
+                        disabled={busyId === d.id}
+                        onChange={(e) => handleAssign(d, e.target.value)}
+                        style={inputStyle}
+                      >
+                        <option value="">Assign to…</option>
+                        {activeMerchants.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.trading_name}
+                          </option>
+                        ))}
+                      </select>
+                    ))}
+                </Td>
                 <Td>
                   {d.shop_name ?? '—'}
                   {d.till_label && <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>{d.till_label}</div>}
+                  {d.merchant_id && !d.till_id && d.status !== 'revoked' && (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>Not linked to a till</div>
+                  )}
                 </Td>
                 <Td>
                   <StatusBadge status={d.status} />
@@ -138,20 +195,38 @@ export function DevicesPage() {
                       Code expires {formatWhen(d.enrollment_expires_at)}
                     </div>
                   )}
+                  {d.status === 'suspended' && d.suspended_reason && (
+                    <div style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 2 }}>{d.suspended_reason}</div>
+                  )}
                   {d.status === 'revoked' && d.revoked_reason && (
                     <div style={{ color: 'var(--text-dim)', fontSize: 12, marginTop: 2 }}>{d.revoked_reason}</div>
                   )}
                 </Td>
-                <Td>
-                  {d.model ?? '—'}
-                  {d.app_version && <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>App {d.app_version}</div>}
-                </Td>
                 <Td>{d.last_seen_at ? formatWhen(d.last_seen_at) : '—'}</Td>
                 <Td>
-                  <div style={{ display: 'flex', gap: 14 }}>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <button onClick={() => handleReissue(d)} disabled={busyId === d.id} style={linkButtonStyle}>
-                      New code
+                      {d.status === 'revoked' ? 'Return to inventory' : 'New code'}
                     </button>
+                    {d.merchant_id && d.status !== 'revoked' && (
+                      <button onClick={() => handleUnassign(d)} disabled={busyId === d.id} style={linkButtonStyle}>
+                        Unassign
+                      </button>
+                    )}
+                    {d.status === 'active' && (
+                      <button
+                        onClick={() => handleSuspend(d)}
+                        disabled={busyId === d.id}
+                        style={{ ...linkButtonStyle, color: 'var(--status-bad)' }}
+                      >
+                        Suspend
+                      </button>
+                    )}
+                    {d.status === 'suspended' && (
+                      <button onClick={() => handleReinstate(d)} disabled={busyId === d.id} style={linkButtonStyle}>
+                        Reinstate
+                      </button>
+                    )}
                     {d.status !== 'revoked' && (
                       <button
                         onClick={() => handleRevoke(d)}
@@ -201,7 +276,7 @@ function CodeCard({ issued, onDismiss }: { issued: DeviceWithCode; onDismiss: ()
         {issued.enrollment_code}
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 12 }}>
-        Enter this in the PayPulse POS app on the phone or terminal. It works once
+        Enter this in the PayPulse POS app on the handset. It works once
         {issued.enrollment_expires_at ? ` and expires ${formatWhen(issued.enrollment_expires_at)}` : ''}. It can't be
         shown again — use “New code” if it's lost.
       </div>
@@ -217,37 +292,20 @@ function CodeCard({ issued, onDismiss }: { issued: DeviceWithCode; onDismiss: ()
   )
 }
 
-function RegisterForm({
-  merchantId,
-  shops,
-  tills,
-  onCreated,
-}: {
-  merchantId: string
-  shops: Shop[]
-  tills: TillRecord[]
-  onCreated: (d: DeviceWithCode) => void
-}) {
-  const [shopId, setShopId] = useState(shops[0]?.id ?? '')
-  const [tillId, setTillId] = useState('')
+function AddDeviceForm({ onCreated }: { onCreated: (d: DeviceWithCode) => void }) {
   const [label, setLabel] = useState('')
+  const [serial, setSerial] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const shopTills = tills.filter((t) => t.shop_id === shopId && t.status === 'active')
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!shopId) {
-      setFormError('Create a shop first')
-      return
-    }
     setSaving(true)
     setFormError(null)
     try {
-      onCreated(await registerDevice(merchantId, { shop_id: shopId, till_id: tillId || null, label: label.trim() }))
+      onCreated(await adminAddDevice({ label: label.trim(), serial_number: serial.trim() || null }))
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not register device')
+      setFormError(err instanceof Error ? err.message : 'Could not add device')
     } finally {
       setSaving(false)
     }
@@ -269,45 +327,15 @@ function RegisterForm({
       }}
     >
       <div>
-        <label style={labelStyle}>Shop</label>
-        <select
-          value={shopId}
-          onChange={(e) => {
-            setShopId(e.target.value)
-            setTillId('')
-          }}
-          style={inputStyle}
-        >
-          {shops.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        <label style={labelStyle}>Name</label>
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. POS terminal 014" required style={inputStyle} />
       </div>
       <div>
-        <label style={labelStyle}>Till (optional)</label>
-        <select value={tillId} onChange={(e) => setTillId(e.target.value)} style={inputStyle}>
-          <option value="">No specific till</option>
-          {shopTills.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label style={labelStyle}>Device name</label>
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. Counter phone"
-          required
-          style={inputStyle}
-        />
+        <label style={labelStyle}>Serial number (optional)</label>
+        <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Printed on the device" style={inputStyle} />
       </div>
       <button type="submit" disabled={saving} style={primaryButtonStyle}>
-        {saving ? 'Registering…' : 'Register device'}
+        {saving ? 'Adding…' : 'Add device'}
       </button>
       {formError && <span style={{ color: 'var(--status-bad)', fontSize: 13 }}>{formError}</span>}
     </form>

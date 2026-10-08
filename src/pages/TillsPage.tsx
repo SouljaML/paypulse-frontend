@@ -1,6 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '../lib/auth'
-import { createTill, listShops, listTills, setTillStatus, type Shop, type TillRecord } from '../lib/api'
+import {
+  createTill,
+  listAvailableDevices,
+  listShops,
+  listTills,
+  setTillDevice,
+  setTillStatus,
+  type DeviceRecord,
+  type Shop,
+  type TillRecord,
+} from '../lib/api'
 import { StatusBadge } from '../components/StatusBadge'
 
 export function TillsPage() {
@@ -8,15 +18,17 @@ export function TillsPage() {
   const merchantId = decoded?.merchant_id ?? null
   const [tills, setTills] = useState<TillRecord[] | null>(null)
   const [shops, setShops] = useState<Shop[]>([])
+  const [available, setAvailable] = useState<DeviceRecord[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   async function reload() {
     if (!merchantId) return
-    const [t, s] = await Promise.all([listTills(merchantId), listShops(merchantId)])
+    const [t, s, a] = await Promise.all([listTills(merchantId), listShops(merchantId), listAvailableDevices(merchantId)])
     setTills(t)
     setShops(s)
+    setAvailable(a)
   }
 
   useEffect(() => {
@@ -54,10 +66,24 @@ export function TillsPage() {
     }
   }
 
+  async function handleChangeDevice(till: TillRecord, deviceId: string) {
+    if (!merchantId || !deviceId) return
+    setBusyId(till.id)
+    setError(null)
+    try {
+      await setTillDevice(merchantId, till.id, deviceId)
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not change device')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const shopName = (shopId: string) => shops.find((s) => s.id === shopId)?.name ?? shopId.slice(0, 8)
 
   if (!merchantId) return <p style={{ color: 'var(--status-bad)', fontSize: 13 }}>Not linked to a merchant.</p>
-  if (error) return <div style={{ color: 'var(--status-bad)' }}>{error}</div>
+  if (error && !tills) return <div style={{ color: 'var(--status-bad)' }}>{error}</div>
   if (!tills) return <div style={{ color: 'var(--text-dim)' }}>Loading…</div>
 
   return (
@@ -65,17 +91,20 @@ export function TillsPage() {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
         <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Tills</h1>
         <button onClick={() => setShowForm((s) => !s)} style={secondaryButtonStyle}>
-          {showForm ? 'Cancel' : 'Register till'}
+          {showForm ? 'Cancel' : 'Add till'}
         </button>
       </div>
       <p style={{ color: 'var(--text-dim)', fontSize: 13, margin: '0 0 20px' }}>
-        Blocking a till stops the very next transaction attempted from it — across every provider.
+        Each till runs on one PayPulse device. Blocking a till stops the very next transaction attempted from it —
+        across every provider.
       </p>
+      {error && <div style={{ color: 'var(--status-bad)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
       {showForm && (
         <AddTillForm
           merchantId={merchantId}
           shops={shops}
+          devices={available}
           onCreated={() => {
             setShowForm(false)
             reload().catch((err) => setError(err.message))
@@ -90,7 +119,7 @@ export function TillsPage() {
           <thead>
             <tr style={{ borderBottom: '1px solid var(--hairline)' }}>
               <Th>Label</Th>
-              <Th>Identifier</Th>
+              <Th>Device</Th>
               <Th>Shop</Th>
               <Th>Status</Th>
               <Th />
@@ -100,7 +129,29 @@ export function TillsPage() {
             {tills.map((t) => (
               <tr key={t.id} style={{ borderBottom: '1px solid var(--hairline)' }}>
                 <Td style={{ fontWeight: 500 }}>{t.label}</Td>
-                <Td className="num">{t.till_identifier}</Td>
+                <Td>
+                  <div className="num">{t.device_reference ?? '—'}</div>
+                  {t.device_status && t.device_status !== 'active' && (
+                    <div style={{ marginTop: 2 }}>
+                      <StatusBadge status={t.device_status} />
+                    </div>
+                  )}
+                  {available.length > 0 && (
+                    <select
+                      value=""
+                      disabled={busyId === t.id}
+                      onChange={(e) => handleChangeDevice(t, e.target.value)}
+                      style={{ ...inputStyle, marginTop: 4, fontSize: 12 }}
+                    >
+                      <option value="">Change device…</option>
+                      {available.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.label} ({d.reference})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Td>
                 <Td>{shopName(t.shop_id)}</Td>
                 <Td>
                   <StatusBadge status={t.status} />
@@ -135,14 +186,16 @@ export function TillsPage() {
 function AddTillForm({
   merchantId,
   shops,
+  devices,
   onCreated,
 }: {
   merchantId: string
   shops: Shop[]
+  devices: DeviceRecord[]
   onCreated: () => void
 }) {
   const [shopId, setShopId] = useState(shops[0]?.id ?? '')
-  const [tillIdentifier, setTillIdentifier] = useState('')
+  const [deviceId, setDeviceId] = useState('')
   const [label, setLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -156,7 +209,7 @@ function AddTillForm({
     setSaving(true)
     setFormError(null)
     try {
-      await createTill(merchantId, shopId, tillIdentifier, label)
+      await createTill(merchantId, shopId, deviceId, label)
       onCreated()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Could not register till')
@@ -191,14 +244,15 @@ function AddTillForm({
         </select>
       </div>
       <div>
-        <label style={labelStyle}>Till identifier</label>
-        <input
-          value={tillIdentifier}
-          onChange={(e) => setTillIdentifier(e.target.value)}
-          placeholder="e.g. till-002"
-          required
-          style={inputStyle}
-        />
+        <label style={labelStyle}>Device</label>
+        <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} required style={inputStyle}>
+          <option value="">{devices.length ? 'Select a device…' : 'No devices available'}</option>
+          {devices.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label} ({d.reference})
+            </option>
+          ))}
+        </select>
       </div>
       <div>
         <label style={labelStyle}>Label</label>
@@ -211,7 +265,7 @@ function AddTillForm({
         />
       </div>
       <button type="submit" disabled={saving} style={primaryButtonStyle}>
-        {saving ? 'Registering…' : 'Register till'}
+        {saving ? 'Adding…' : 'Add till'}
       </button>
       {formError && <span style={{ color: 'var(--status-bad)', fontSize: 13 }}>{formError}</span>}
     </form>

@@ -15,6 +15,7 @@ const ROLE_LABELS: Record<string, string> = {
 const ADMIN_NAV: NavItem[] = [
   { to: '/merchants', label: 'Merchants' },
   { to: '/providers', label: 'Providers' },
+  { to: '/devices', label: 'Devices', platformAdminOnly: true },
   { to: '/transactions', label: 'Transactions' },
   // Commission is PayPulse's own margin, so compliance staff don't get this.
   { to: '/reports', label: 'Reports', platformAdminOnly: true },
@@ -27,7 +28,6 @@ const OWNER_NAV: NavItem[] = [
   { to: '/shops', label: 'Shops' },
   { to: '/tellers', label: 'Tellers' },
   { to: '/tills', label: 'Tills' },
-  { to: '/devices', label: 'Devices' },
   { to: '/transactions', label: 'Transactions' },
   { to: '/settings', label: 'Settings' },
 ]

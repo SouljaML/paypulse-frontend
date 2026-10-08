@@ -156,7 +156,7 @@ export default function App() {
         <Route
           path="/devices"
           element={
-            <RequireRole roles={OWNER_ROLES}>
+            <RequireRole roles={['platform_admin']}>
               <DevicesPage />
             </RequireRole>
           }
