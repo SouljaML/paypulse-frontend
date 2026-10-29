@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { ApiError } from '../lib/api'
+import { LogoMark } from '../components/Logo'
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -44,9 +45,12 @@ export function LoginPage() {
           padding: 32,
         }}
       >
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--text)' }}>PayPulse</div>
-          <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Sign in</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
+          <LogoMark size={44} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: -0.4, color: 'var(--text)' }}>PayPulse</div>
+            <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Sign in to continue</div>
+          </div>
         </div>
 
         <label style={{ display: 'block', fontSize: 13, color: 'var(--text-dim)', marginBottom: 4 }}>

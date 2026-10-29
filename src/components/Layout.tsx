@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { LogoMark } from './Logo'
 import { useAuth } from '../lib/auth'
 
 const ADMIN_ROLES = ['platform_admin', 'compliance_officer']
@@ -66,6 +67,7 @@ export function Layout() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <LogoMark size={24} />
           <span style={{ color: '#fff', fontWeight: 600, fontSize: 14, letterSpacing: 0.2 }}>PayPulse</span>
           <span style={{ color: 'var(--ink-text-dim)', fontSize: 13 }}>{isAdmin ? 'Operations' : 'Merchant'}</span>
         </div>
